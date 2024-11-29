@@ -7,21 +7,37 @@ export function registerRoutes(app: Express) {
   app.post("/api/recipes/parse", async (req, res) => {
     try {
       const { url } = req.body;
-      // TODO: Implement recipe parsing logic
-      const mockRecipe = {
-        title: "Sample Recipe",
-        ingredients: ["ingredient 1", "ingredient 2"],
-        instructions: ["step 1", "step 2"],
+      if (!url) {
+        return res.status(400).json({ error: "URL is required" });
+      }
+
+      const scraper = require('recipe-scraper');
+      const scrapedRecipe = await scraper(url);
+      
+      // Transform scraped data to match our schema
+      const recipe = {
+        title: scrapedRecipe.name,
+        sourceUrl: url,
+        ingredients: scrapedRecipe.ingredients,
+        instructions: scrapedRecipe.instructions,
         nutritionInfo: {
-          calories: 300,
-          protein: 20,
-          carbs: 30,
-          fat: 10
-        }
+          calories: scrapedRecipe.calories || 0,
+          protein: scrapedRecipe.protein || 0,
+          carbs: scrapedRecipe.carbohydrates || 0,
+          fat: scrapedRecipe.fat || 0,
+          fiber: scrapedRecipe.fiber || 0,
+          sugar: scrapedRecipe.sugar || 0
+        },
+        imageUrl: scrapedRecipe.image,
+        isFavorite: false
       };
-      res.json(mockRecipe);
+
+      // Save to database
+      const [savedRecipe] = await db.insert(recipes).values(recipe).returning();
+      res.json(savedRecipe);
     } catch (error) {
-      res.status(500).json({ error: "Failed to parse recipe" });
+      console.error('Recipe parsing error:', error);
+      res.status(500).json({ error: "Failed to parse recipe. Make sure the URL is from a supported recipe website." });
     }
   });
 
@@ -41,6 +57,23 @@ export function registerRoutes(app: Express) {
       res.json(inserted[0]);
     } catch (error) {
       res.status(500).json({ error: "Failed to save recipe" });
+    }
+  });
+
+  app.get("/api/recipes/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const recipe = await db.query.recipes.findFirst({
+        where: eq(recipes.id, Number(id))
+      });
+      
+      if (!recipe) {
+        return res.status(404).json({ error: "Recipe not found" });
+      }
+      
+      res.json(recipe);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch recipe" });
     }
   });
 
